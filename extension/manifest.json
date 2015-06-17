@@ -1,0 +1,24 @@
+{
+  "name": "Omnipotent Gmail Extension",
+  "description": "Bring OmniFocus awareness into Gmail",
+  "version": "0.1",
+  "content_scripts": [
+    {
+      "matches": [
+        "https://mail.google.com/*",
+        "https://inbox.google.com/*"
+      ],
+      "js": ["js/inboxsdk.js", "js/jquery-2.1.4.min.js", "js/content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "permissions": [
+    "https://mail.google.com/",
+    "https://inbox.google.com/",
+    "https://127.0.0.1:9201/"
+  ],
+  "web_accessible_resources": [
+    "images/thumbnail.png"
+  ],
+  "manifest_version": 2
+}

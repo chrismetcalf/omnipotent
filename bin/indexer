@@ -1,0 +1,31 @@
+#!/usr/bin/env ruby
+
+require "rubygems"
+# require "omnifocus"
+require "elasticsearch"
+require File.expand_path("../../lib/omnifocus", __FILE__)
+
+@es_client = Elasticsearch::Client.new
+
+# Each time we'll just reindex everything
+count = 0
+OmniFocus.new.all_tasks.each do |task|
+  @es_client.index({
+    index: 'tasks',
+    type: 'task',
+    id: task.id_.get,
+    body: {
+      name: task.name.get.force_encoding("UTF-8"),
+      note: task.note.get.force_encoding("UTF-8"),
+      due_date: task.due_date.get == :missing_value ? nil : task.due_date.get,
+      defer_date: task.defer_date.get == :missing_value ? nil : task.defer_date.get,
+      flagged: task.flagged.get,
+      blocked: task.blocked.get,
+      completed: task.completed.get,
+      project: (task.containing_project.get != :missing_value ? task.containing_project.get.name.get.force_encoding("UTF-8") : nil),
+      context: (task.context.get != :missing_value ? task.context.get.name.get.force_encoding("UTF-8") : nil)
+    }
+  })
+  count += 1
+end
+puts "Indexed #{count} tasks!"
