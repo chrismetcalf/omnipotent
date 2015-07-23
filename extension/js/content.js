@@ -27,7 +27,7 @@ InboxSDK.load('1', 'sdk_omnipotent_e327680648').then(function(sdk){
 
         $.each(response.hits.hits, function(idx, hit) {
           // What kind of task is it?
-          if(hit._source.context == "Waiting For") {
+          if(hit._source.context[0]["name"] == "Waiting For") {
             waiting += 1;
           } else {
             tasks += 1;
@@ -35,7 +35,7 @@ InboxSDK.load('1', 'sdk_omnipotent_e327680648').then(function(sdk){
 
           // Anything due soon?
           if(hit._source.due_date != null) {
-            var delta = (new Date(hit._source.due_date) - Date.now())/1000/60/60;
+            var delta = (new Date(hit._source.due_date * 1000) - Date.now())/1000/60/60;
             if(delta < min_due) {
               min_due = delta;
             }
@@ -43,7 +43,7 @@ InboxSDK.load('1', 'sdk_omnipotent_e327680648').then(function(sdk){
 
           // Deferred?
           if(hit._source.defer_date != null) {
-            var deferred = new Date(hit._source.defer_date);
+            var deferred = new Date(hit._source.defer_date * 1000);
             if(min_deferred == null || deferred < min_deferred) {
               min_deferred = deferred;
             }
@@ -104,13 +104,13 @@ InboxSDK.load('1', 'sdk_omnipotent_e327680648').then(function(sdk){
         var list = null;
         jQuery.each(response.hits.hits, function(idx, hit) {
           if(list == null) {
-            list = document.createElement("ul");
+            list = document.createElement('ul');
           }
-          jQuery(list).append("<li>"
-              + "<em>" + hit._source.name + "</em> "
-              + "(" + hit._source.context + ") "
-              + "<a href=\"omnifocus:///task/" + hit._id + "\">View &raquo</a>"
-              + "</li>");
+          jQuery(list).append('<li>'
+              + '<em>' + hit._source.name + '</em> '
+              + '(' + hit._source.context + ') '
+              + '<a href="omnifocus:///task/' + hit._id + '">View &raquo</a>'
+              + '</li>');
         });
 
         if(list != null) {

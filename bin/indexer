@@ -1,31 +1,205 @@
 #!/usr/bin/env ruby
 
-require "rubygems"
-# require "omnifocus"
-require "elasticsearch"
-require File.expand_path("../../lib/omnifocus", __FILE__)
+require 'elasticsearch'
+require 'docopt'
+require 'sqlite3'
+require 'json'
 
-@es_client = Elasticsearch::Client.new
+doc = <<DOCOPT
+Index OmniFocus tasks into ElasticSearch for use with the OmniPotent Chrome extension
+
+Usage:
+  #{__FILE__} --help | --version
+  #{__FILE__} [options]
+
+Options:
+  -es, --elastic-search=<URI>     Use an alternative ES instance URI
+  -of, --omnifocus=<PATH>         Use an alternative OF DB path [Default: ~/Library/Containers/com.omnigroup.OmniFocus2/Data/Library/Caches/com.omnigroup.OmniFocus2/OmniFocusDatabase2]
+  -v, --verbose                   Be loud and proud
+  --help                          Show this message
+  --version                       Print the version
+DOCOPT
+
+class String
+  def rtf_to_text
+    self.gsub(/<\/p>/, "\n")
+      .gsub(/<[^>]+>/, ' ')
+      .strip
+      .force_encoding('UTF-8')
+  end
+end
+
+class Time
+  THIRTY_ONE_YEARS = 60 * 60 * 24 * 365 * 31 + 60 * 60 * 24 * 8
+  def self.omni_time(of_epoch)
+    return of_epoch == nil ? nil : Time.at(THIRTY_ONE_YEARS + of_epoch.to_i).to_i
+  end
+end
+
+begin
+  args = Docopt::docopt(doc, version: '0.1')
+  db_file = File.expand_path(args['--omnifocus'])
+  raise 'OmniFocus DB could not be found' unless File.exists? db_file
+
+  @es_client = Elasticsearch::Client.new
+
+  # Check to see if we even need to index
+  db_modified = File.mtime(db_file).to_i
+  index_modified = 0
+  begin
+    index_modified = @es_client.get(index: 'meta', type: 'meta', id: 'meta')["_source"]["db_modified"]
+  rescue
+    # Gobble
+  end
+
+  if index_modified >= db_modified
+    puts "OmniFocus database not updated, skipping indexing" if args['--verbose']
+    exit 0
+  end
 
 # Each time we'll just reindex everything
-count = 0
-OmniFocus.new.all_tasks.each do |task|
+  count = 0
+
+  # Connect to SQLite
+  db = SQLite3::Database.open db_file
+
+  # Prepare our uber-statement
+  fetch_tasks = db.prepare <<SQL
+  SELECT
+    t.persistentIdentifier AS id,
+    t.name AS name,
+    t.noteXMLData AS note,
+    t.dateDue AS due_date,
+    t.effectiveDateToStart AS defer_date,
+    t.dateCompleted AS completed_date,
+    t.effectiveFlagged AS flagged,
+    t.blocked AS blocked,
+    t.context AS context_id,
+    t.parent AS parent_id
+  FROM
+    Task t
+SQL
+
+  # We'll use this to fetch details of a context, and we'll traverse until we find the whole chain
+  lookup_context = db.prepare <<SQL
+  SELECT
+    c.persistentIdentifier AS id,
+    c.name AS name,
+    c.latitude AS latitude,
+    c.longitude AS longitude,
+    c.parent AS parent_id
+  FROM
+    Context c
+  WHERE
+    c.persistentIdentifier = ?
+SQL
+
+  # We'll use this to fetch details of a Project, and we'll traverse until we find the whole chain
+  lookup_project = db.prepare <<SQL
+  SELECT
+    t.persistentIdentifier AS id,
+    t.name AS name,
+    pi.folder AS folder_id
+  FROM
+    Task t,
+    ProjectInfo pi
+  WHERE
+    t.persistentIdentifier = ?
+    AND pi.pk = t.projectInfo
+SQL
+
+  # We'll use this to fetch details of a Folder, and we'll traverse until we find the whole chain
+  lookup_folder= db.prepare <<SQL
+  SELECT
+    f.persistentIdentifier,
+    f.name,
+    f.parent
+  FROM
+    Folder f
+  WHERE
+    f.persistentIdentifier = ?
+SQL
+
+  fetch_tasks.execute.each do |rec|
+    task = {
+      id: rec[0],
+      uri: "omnifocus:///task/#{rec[0]}",
+      name: rec[1],
+      note: (rec[2] || '').rtf_to_text,
+      due_date: Time.omni_time(rec[3]),
+      defer_date: Time.omni_time(rec[4]),
+      deferred: rec[4] != nil ? true : false,
+      completed_date: Time.omni_time(rec[5]),
+      completed: rec[5] != nil ? true : false,
+      flagged: rec[6],
+      blocked: rec[7]
+    }
+
+    # Look up our Context path
+    context_chain = []
+    context_id = rec[8]
+    while context_id != nil
+      ctx = lookup_context.execute(context_id).first
+      context_chain.push({
+        id: ctx[0],
+        uri: "omnifocus:///context/#{ctx[0]}",
+        name: ctx[1],
+        latitude: ctx[2],
+        longitude: ctx[3]
+      })
+      context_id = ctx[4]
+    end
+    task[:context] = context_chain
+
+    # Try and look up our Project
+    project = nil
+    folder_id = nil
+    begin
+      prj = lookup_project.execute(rec[9]).first
+      project = {
+        id: prj[0],
+        uri: "omnifocus:///task/#{prj[0]}",
+        name: prj[1]
+      }
+      folder_id = prj[2]
+    rescue NoMethodError => e
+      # Gobble Gobble
+    end
+    task[:project] = project
+
+    # Look up our Folder
+    folder_chain = []
+    while folder_id != nil
+      fld = lookup_folder.execute(folder_id).first
+      folder_chain.push({
+        id: fld[0],
+        name: fld[1]
+      })
+      folder_id = fld[2]
+    end
+    task[:project_folder] = folder_chain
+
+    puts task.inspect if args["--verbose"]
+    # Index everything
+    @es_client.index({
+      index: 'tasks',
+      type: 'task',
+      id: task[:id],
+      body: task
+    })
+    count += 1
+  end
   @es_client.index({
-    index: 'tasks',
-    type: 'task',
-    id: task.id_.get,
+    index: 'meta',
+    type: 'meta',
+    id: 'meta',
     body: {
-      name: task.name.get.force_encoding("UTF-8"),
-      note: task.note.get.force_encoding("UTF-8"),
-      due_date: task.due_date.get == :missing_value ? nil : task.due_date.get,
-      defer_date: task.defer_date.get == :missing_value ? nil : task.defer_date.get,
-      flagged: task.flagged.get,
-      blocked: task.blocked.get,
-      completed: task.completed.get,
-      project: (task.containing_project.get != :missing_value ? task.containing_project.get.name.get.force_encoding("UTF-8") : nil),
-      context: (task.context.get != :missing_value ? task.context.get.name.get.force_encoding("UTF-8") : nil)
+      db_modified: db_modified
     }
   })
-  count += 1
+  puts "Indexed #{count} tasks!" if args["--verbose"]
+rescue Docopt::Exit => e
+  $stderr.puts e.message
+  exit 1
 end
-puts "Indexed #{count} tasks!"
+
