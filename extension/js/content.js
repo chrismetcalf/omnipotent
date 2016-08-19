@@ -1,5 +1,8 @@
 function search(query) {
-  return jQuery.getJSON("https://127.0.0.1:9201/tasks/_search?q=" + query);
+  return jQuery.ajax({
+    dataType: "json",
+    url: "https://127.0.0.1:9201/tasks/_search?q=" + query
+  });
 }
 
 InboxSDK.load('1', 'sdk_omnipotent_e327680648').then(function(sdk){
@@ -27,7 +30,7 @@ InboxSDK.load('1', 'sdk_omnipotent_e327680648').then(function(sdk){
 
         $.each(response.hits.hits, function(idx, hit) {
           // What kind of task is it?
-          if(hit._source.context[0]["name"] == "Waiting For") {
+          if(hit._source.context.length > 0 && hit._source.context[0]["name"] == "Waiting For") {
             waiting += 1;
           } else {
             tasks += 1;
@@ -106,11 +109,22 @@ InboxSDK.load('1', 'sdk_omnipotent_e327680648').then(function(sdk){
           if(list == null) {
             list = document.createElement('ul');
           }
+
+          var context = hit._source.context[0];
+          var project = hit._source.project;
+
           jQuery(list).append('<li>'
-              + '<em>' + hit._source.name + '</em> '
-              + '(' + hit._source.context + ') '
-              + '<a href="omnifocus:///task/' + hit._id + '">View &raquo</a>'
+              + '<em><a class="omni" href="#" data-url="' + hit._source.uri + '">' + hit._source.name + '</a></em> '
+              + (context ? '(<a class="omni" href="#" data-url="' + context.uri + '">' + context.name + '</a>) ' : '')
+              + (project ? '[<a class="omni" href="#" data-url="' + project.uri + '">' + project.name + '</a>] ' : '')
               + '</li>');
+          jQuery(list).find(".omni").click(function(e) {
+            e.preventDefault();
+            var popout = window.open(jQuery(this).attr("data-url"));
+            window.setTimeout(function() {
+              popout.close();
+            }, 500);
+          });
         });
 
         if(list != null) {

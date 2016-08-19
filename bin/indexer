@@ -4,6 +4,7 @@ require 'elasticsearch'
 require 'docopt'
 require 'sqlite3'
 require 'json'
+require 'tempfile'
 
 doc = <<DOCOPT
 Index OmniFocus tasks into ElasticSearch for use with the OmniPotent Chrome extension
@@ -16,6 +17,7 @@ Options:
   -es, --elastic-search=<URI>     Use an alternative ES instance URI
   -of, --omnifocus=<PATH>         Use an alternative OF DB path [Default: ~/Library/Containers/com.omnigroup.OmniFocus2/Data/Library/Caches/com.omnigroup.OmniFocus2/OmniFocusDatabase2]
   -v, --verbose                   Be loud and proud
+  -f, --force                     Index even if we think things are up to date
   --help                          Show this message
   --version                       Print the version
 DOCOPT
@@ -36,6 +38,9 @@ class Time
   end
 end
 
+# Create a temp file we'll use later
+temp_file = Tempfile.new("omnipotent_indexer")
+
 begin
   args = Docopt::docopt(doc, version: '0.1')
   db_file = File.expand_path(args['--omnifocus'])
@@ -52,16 +57,20 @@ begin
     # Gobble
   end
 
-  if index_modified >= db_modified
+  puts "Index last modified at #{index_modified} and DB at #{db_modified}" if args['--verbose']
+  if index_modified >= db_modified && !args['--force']
     puts "OmniFocus database not updated, skipping indexing" if args['--verbose']
     exit 0
   end
 
-# Each time we'll just reindex everything
+  # Each time we'll just reindex everything
   count = 0
 
+  # Copy our database file to a temporary file, and work based on that
+  temp_file.write(File.open(db_file).read)
+
   # Connect to SQLite
-  db = SQLite3::Database.open db_file
+  db = SQLite3::Database.open temp_file.path
 
   # Prepare our uber-statement
   fetch_tasks = db.prepare <<SQL
@@ -179,7 +188,6 @@ SQL
     end
     task[:project_folder] = folder_chain
 
-    puts task.inspect if args["--verbose"]
     # Index everything
     @es_client.index({
       index: 'tasks',
@@ -201,5 +209,8 @@ SQL
 rescue Docopt::Exit => e
   $stderr.puts e.message
   exit 1
+ensure
+  temp_file.close
+  temp_file.unlink
 end
 
