@@ -1,8 +1,17 @@
-function search(query) {
-  return jQuery.ajax({
-    dataType: "json",
-    url: "https://127.0.0.1:9201/tasks/_search?q=" + query
-  });
+function search(query, success, failure) {
+  var xhr = new XMLHttpRequest();
+  xhr.onreadystatechange = function() {
+    if(xhr.readyState === XMLHttpRequest.DONE) {
+      if(xhr.status === 200) {
+        return success(JSON.parse(xhr.responseText));
+      } else {
+        return failure({"error": true});
+      }
+    }
+  }
+
+  xhr.open("GET", "https://127.0.0.1:9201/tasks/_search?q=" + query, true);
+  xhr.send();
 }
 
 InboxSDK.load('1', 'sdk_omnipotent_e327680648').then(function(sdk){
@@ -20,81 +29,82 @@ InboxSDK.load('1', 'sdk_omnipotent_e327680648').then(function(sdk){
 
   // Add labels for mails that have outstanding tasks
   sdk.Lists.registerThreadRowViewHandler(function(thread_row) {
-    search(thread_row.getThreadID() + " AND completed:false")
-      .done(function(response) {
-        var waiting = 0;
-        var tasks = 0;
-        // Yeah, I know this is kind of silly.
-        var min_due = 100000000;
-        var min_deferred = null;
+    search(thread_row.getThreadID() + " AND completed:false", function(response) {
+      var waiting = 0;
+      var tasks = 0;
+      // Yeah, I know this is kind of silly.
+      var min_due = 100000000;
+      var min_deferred = null;
 
-        $.each(response.hits.hits, function(idx, hit) {
-          // What kind of task is it?
-          if(hit._source.context.length > 0 && hit._source.context[0]["name"] == "Waiting For") {
-            waiting += 1;
-          } else {
-            tasks += 1;
-          }
-
-          // Anything due soon?
-          if(hit._source.due_date != null) {
-            var delta = (new Date(hit._source.due_date * 1000) - Date.now())/1000/60/60;
-            if(delta < min_due) {
-              min_due = delta;
-            }
-          }
-
-          // Deferred?
-          if(hit._source.defer_date != null) {
-            var deferred = new Date(hit._source.defer_date * 1000);
-            if(min_deferred == null || deferred < min_deferred) {
-              min_deferred = deferred;
-            }
-          }
-        });
-
-        // Add Labels
-        if(waiting) {
-          thread_row.addLabel({
-            title: "Waiting For" + (waiting > 1 ? " (x" + waiting + ")" : ""),
-            backgroundColor: "#0074D9",
-            foregroundColor: "#FFFFFF"
-          });
-        }
-        if(tasks) {
-          thread_row.addLabel({
-            title: "Active Task" + (waiting > 1 ? " (x" + waiting + ")" : ""),
-            backgroundColor: "#2ECC40",
-            foregroundColor: "#FFFFFF"
-          });
+      $.each(response.hits.hits, function(idx, hit) {
+        // What kind of task is it?
+        if(hit._source.context.length > 0 && hit._source.context[0]["name"] == "Waiting For") {
+          waiting += 1;
+        } else {
+          tasks += 1;
         }
 
-        // Due Labels
-        if(min_due < 0) {
-          // Overdue
-          thread_row.addLabel({
-            title: "Overdue!",
-            backgroundColor: "#FF4136",
-            foregroundColor: "#FFFFFF"
-          });
-        } else if(min_due < 24) {
-          // Due Soon
-          thread_row.addLabel({
-            title: "Due Soon",
-            backgroundColor: "#FF851B",
-            foregroundColor: "#FFFFFF"
-          });
+        // Anything due soon?
+        if(hit._source.due_date != null) {
+          var delta = (new Date(hit._source.due_date * 1000) - Date.now())/1000/60/60;
+          if(delta < min_due) {
+            min_due = delta;
+          }
         }
 
-        // Deferred
-        if(min_deferred) {
-          thread_row.addLabel({
-            title: "Deferred (" + min_deferred.toISOString().replace(/T.*$/, "") + ")",
-            backgroundColor: "#AAAAAA",
-            foregroundColor: "#FFFFFF"
-          });
+        // Deferred?
+        if(hit._source.defer_date != null) {
+          var deferred = new Date(hit._source.defer_date * 1000);
+          if(min_deferred == null || deferred < min_deferred) {
+            min_deferred = deferred;
+          }
         }
       });
+
+      // Add Labels
+      if(waiting) {
+        thread_row.addLabel({
+          title: "Waiting For" + (waiting > 1 ? " (x" + waiting + ")" : ""),
+          backgroundColor: "#0074D9",
+          foregroundColor: "#FFFFFF"
+        });
+      }
+      if(tasks) {
+        thread_row.addLabel({
+          title: "Active Task" + (waiting > 1 ? " (x" + waiting + ")" : ""),
+          backgroundColor: "#2ECC40",
+          foregroundColor: "#FFFFFF"
+        });
+      }
+
+      // Due Labels
+      if(min_due < 0) {
+        // Overdue
+        thread_row.addLabel({
+          title: "Overdue!",
+          backgroundColor: "#FF4136",
+          foregroundColor: "#FFFFFF"
+        });
+      } else if(min_due < 24) {
+        // Due Soon
+        thread_row.addLabel({
+          title: "Due Soon",
+          backgroundColor: "#FF851B",
+          foregroundColor: "#FFFFFF"
+        });
+      }
+
+      // Deferred
+      if(min_deferred) {
+        thread_row.addLabel({
+          title: "Deferred (" + min_deferred.toISOString().replace(/T.*$/, "") + ")",
+          backgroundColor: "#AAAAAA",
+          foregroundColor: "#FFFFFF"
+        });
+      }
+    }, function(err) {
+      console.log("Error fetching tasks");
+    });
   });
 
   // Check to see if this thread has outstanding tasks
@@ -132,7 +142,7 @@ InboxSDK.load('1', 'sdk_omnipotent_e327680648').then(function(sdk){
           thread_view.addSidebarContentPanel({
             title: "Matching OmniFocus Tasks",
             el: list,
-            iconUrl: chrome.runtime.getURL('images/thumbnail.png')
+            // iconUrl: chrome.runtime.getURL('images/thumbnail.png')
           });
         }
       });
@@ -141,7 +151,7 @@ InboxSDK.load('1', 'sdk_omnipotent_e327680648').then(function(sdk){
   // Button and shortcut key for creating a task off of the current view
   sdk.Toolbars.registerToolbarButtonForThreadView({
     title: "New Task",
-    iconUrl: chrome.runtime.getURL('images/thumbnail.png'),
+    // iconUrl: chrome.runtime.getURL('images/thumbnail.png'),
     // section: SectionNames.METADATA_STATE,
     section: 1,
     keyboardShortcutHandle: sdk.Keyboard.createShortcutHandle({
