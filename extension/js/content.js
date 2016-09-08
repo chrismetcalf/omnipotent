@@ -49,7 +49,7 @@ InboxSDK.load('1', 'sdk_omnipotent_e327680648').then(function(sdk){
 
   // Add labels for mails that have outstanding tasks
   sdk.Lists.registerThreadRowViewHandler(function(thread_row) {
-    search("(" + thread_row.getThreadID() + ' OR "subject=' + encodeURIComponent(thread_row.getSubject()) + '") AND completed:false', function(response) {
+    search(thread_row.getThreadID() + ' AND completed:false', function(response) {
       var waiting = 0;
       var tasks = 0;
       // Yeah, I know this is kind of silly.
@@ -137,7 +137,7 @@ InboxSDK.load('1', 'sdk_omnipotent_e327680648').then(function(sdk){
 
     // Look him up!
     search(
-      "(" + thread_id + ' OR "subject=' + encodeURIComponent(subject) + '") AND completed:false',
+      thread_id + ' AND completed:false',
       function(response) {
         var list = null;
         jQuery.each(response.hits.hits, function(idx, hit) {
