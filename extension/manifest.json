@@ -9,6 +9,7 @@
         "https://inbox.google.com/*"
       ],
       "js": ["js/inboxsdk.js", "js/jquery-2.1.4.min.js", "js/content.js"],
+      "css" : ["css/styles.css"],
       "run_at": "document_end"
     }
   ],

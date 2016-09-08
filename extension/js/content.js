@@ -14,7 +14,7 @@ function search(query, success, failure) {
   xhr.send();
 }
 
-function open_omni(url) {
+function open_ext(url) {
   var popout = window.open(url);
   window.setTimeout(function() {
     popout.close();
@@ -28,19 +28,20 @@ InboxSDK.load('1', 'sdk_omnipotent_e327680648').then(function(sdk){
     compose_view.addButton({
       title: 'Send + Task',
       iconUrl: chrome.extension.getURL('images/task.png'),
+      iconClass: 'send-task',
       type: 'SEND_ACTION',
-      onClick: function(event) {
-        var thread_id = compose_view.getThreadID();
+      onClick: function(click) {
         var subject = compose_view.getSubject();
-        var note = compose_view.getTextContent().slice(0, 50);
-
-        if(thread_id) {
-          note = 'https://mail.google.com/mail/u/0/#inbox/' + thread_id + '\n\n' + note;
-        } else {
-          note = 'https://mail.google.com/mail/u/0/#advanced-search/subject=' + encodeURIComponent(subject)  + '\n\n' + note;
+        var content = compose_view.getSelectedBodyText();
+        if(!content) {
+          content = compose_view.getTextContent();
         }
 
-        open_omni('omnifocus:///add?note=' + encodeURIComponent(note) + '&name=' + encodeURIComponent(subject));
+        click.composeView.on('sent', function(sent) {
+          var note = 'https://mail.google.com/mail/u/0/#inbox/' + sent.threadID + '\n\n' + content;
+          open_ext('omnifocus:///add?note=' + encodeURIComponent(note) + '&name=' + encodeURIComponent(subject));
+        });
+
         compose_view.send();
       },
     });
@@ -48,7 +49,7 @@ InboxSDK.load('1', 'sdk_omnipotent_e327680648').then(function(sdk){
 
   // Add labels for mails that have outstanding tasks
   sdk.Lists.registerThreadRowViewHandler(function(thread_row) {
-    search(thread_row.getThreadID() + " AND completed:false", function(response) {
+    search("(" + thread_row.getThreadID() + ' OR "subject=' + encodeURIComponent(thread_row.getSubject()) + '") AND completed:false', function(response) {
       var waiting = 0;
       var tasks = 0;
       // Yeah, I know this is kind of silly.
@@ -132,10 +133,11 @@ InboxSDK.load('1', 'sdk_omnipotent_e327680648').then(function(sdk){
   // Check to see if this thread has outstanding tasks
   sdk.Conversations.registerThreadViewHandler(function(thread_view) {
     var thread_id = thread_view.getThreadID();
+    var subject = thread_view.getSubject();
 
     // Look him up!
     search(
-      thread_id + " AND completed:false", 
+      "(" + thread_id + ' OR "subject=' + encodeURIComponent(subject) + '") AND completed:false',
       function(response) {
         var list = null;
         jQuery.each(response.hits.hits, function(idx, hit) {
@@ -153,7 +155,7 @@ InboxSDK.load('1', 'sdk_omnipotent_e327680648').then(function(sdk){
               + '</li>');
           jQuery(list).find(".omni").click(function(e) {
             e.preventDefault();
-            open_omni(jQuery(this).attr("data-url"));
+            open_ext(jQuery(this).attr("data-url"));
           });
         });
 
