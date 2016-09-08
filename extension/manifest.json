@@ -18,6 +18,7 @@
     "https://127.0.0.1:9201/"
   ],
   "web_accessible_resources": [
+    "images/task.png",
     "images/thumbnail.png"
   ],
   "manifest_version": 2

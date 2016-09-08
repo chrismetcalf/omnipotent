@@ -14,18 +14,37 @@ function search(query, success, failure) {
   xhr.send();
 }
 
+function open_omni(url) {
+  var popout = window.open(url);
+  window.setTimeout(function() {
+    popout.close();
+  }, 500);
+}
+
 InboxSDK.load('1', 'sdk_omnipotent_e327680648').then(function(sdk){
-  // // the SDK has been loaded, now do something with it!
-  // sdk.Compose.registerComposeViewHandler(function(composeView){
-  //   // a compose view has come into existence, do something with it!
-  //   composeView.addButton({
-  //     title: "My Nifty Button!",
-  //     iconUrl: 'https://lh5.googleusercontent.com/itq66nh65lfCick8cJ-OPuqZ8OUDTIxjCc25dkc4WUT1JG8XG3z6-eboCu63_uDXSqMnLRdlvQ=s128-h128-e365',
-  //     onClick: function(event) {
-  //       event.composeView.insertTextIntoBodyAtCursor('Hello World!');
-  //     },
-  //   });
-  // });
+  // the SDK has been loaded, now do something with it!
+  sdk.Compose.registerComposeViewHandler(function(compose_view){
+    // a compose view has come into existence, do something with it!
+    compose_view.addButton({
+      title: 'Send + Task',
+      iconUrl: chrome.extension.getURL('images/task.png'),
+      type: 'SEND_ACTION',
+      onClick: function(event) {
+        var thread_id = compose_view.getThreadID();
+        var subject = compose_view.getSubject();
+        var note = compose_view.getTextContent().slice(0, 50);
+
+        if(thread_id) {
+          note = 'https://mail.google.com/mail/u/0/#inbox/' + thread_id + '\n\n' + note;
+        } else {
+          note = 'https://mail.google.com/mail/u/0/#advanced-search/subject=' + encodeURIComponent(subject)  + '\n\n' + note;
+        }
+
+        open_omni('omnifocus:///add?note=' + encodeURIComponent(note) + '&name=' + encodeURIComponent(subject));
+        compose_view.send();
+      },
+    });
+  });
 
   // Add labels for mails that have outstanding tasks
   sdk.Lists.registerThreadRowViewHandler(function(thread_row) {
@@ -103,7 +122,10 @@ InboxSDK.load('1', 'sdk_omnipotent_e327680648').then(function(sdk){
         });
       }
     }, function(err) {
-      console.log("Error fetching tasks");
+      // Failed to connect or fetch tasks
+      sdk.ButterBar.showMessage({
+        text: "Omnipotent: Error fetching tasks!"
+      });
     });
   });
 
@@ -112,8 +134,9 @@ InboxSDK.load('1', 'sdk_omnipotent_e327680648').then(function(sdk){
     var thread_id = thread_view.getThreadID();
 
     // Look him up!
-    search(thread_id + " AND completed:false")
-      .done(function(response) {
+    search(
+      thread_id + " AND completed:false", 
+      function(response) {
         var list = null;
         jQuery.each(response.hits.hits, function(idx, hit) {
           if(list == null) {
@@ -130,10 +153,7 @@ InboxSDK.load('1', 'sdk_omnipotent_e327680648').then(function(sdk){
               + '</li>');
           jQuery(list).find(".omni").click(function(e) {
             e.preventDefault();
-            var popout = window.open(jQuery(this).attr("data-url"));
-            window.setTimeout(function() {
-              popout.close();
-            }, 500);
+            open_omni(jQuery(this).attr("data-url"));
           });
         });
 
@@ -142,17 +162,23 @@ InboxSDK.load('1', 'sdk_omnipotent_e327680648').then(function(sdk){
           thread_view.addSidebarContentPanel({
             title: "Matching OmniFocus Tasks",
             el: list,
-            // iconUrl: chrome.runtime.getURL('images/thumbnail.png')
+            iconUrl: chrome.runtime.getURL('images/thumbnail.png')
           });
         }
-      });
+      },
+      function(err) {
+        // Failed to connect or fetch tasks
+        sdk.ButterBar.showMessage({
+          text: "Omnipotent: Error fetching tasks!"
+        });
+      }
+    );
   });
 
   // Button and shortcut key for creating a task off of the current view
   sdk.Toolbars.registerToolbarButtonForThreadView({
     title: "New Task",
-    // iconUrl: chrome.runtime.getURL('images/thumbnail.png'),
-    // section: SectionNames.METADATA_STATE,
+    iconUrl: chrome.runtime.getURL('images/thumbnail.png'),
     section: 1,
     keyboardShortcutHandle: sdk.Keyboard.createShortcutHandle({
       chord: "t",
