@@ -52,6 +52,8 @@ InboxSDK.load('1', 'sdk_omnipotent_e327680648').then(function(sdk){
     search(thread_row.getThreadID() + ' AND completed:false', function(response) {
       var waiting = 0;
       var tasks = 0;
+      var projects = {};
+
       // Yeah, I know this is kind of silly.
       var min_due = 100000000;
       var min_deferred = null;
@@ -78,6 +80,11 @@ InboxSDK.load('1', 'sdk_omnipotent_e327680648').then(function(sdk){
           if(min_deferred == null || deferred < min_deferred) {
             min_deferred = deferred;
           }
+        }
+
+        // Project Name
+        if(hit._source && hit._source.project) {
+          projects[hit._source.project.name] = true;
         }
       });
 
@@ -122,10 +129,21 @@ InboxSDK.load('1', 'sdk_omnipotent_e327680648').then(function(sdk){
           foregroundColor: "#FFFFFF"
         });
       }
+
+      // Project Labels
+      $.each(projects, function(name, v) {
+        thread_row.addLabel({
+          title: name,
+          backgroundColor: "#DDDDDD",
+          foregroundColor: "#111111"
+        });
+      });
     }, function(err) {
       // Failed to connect or fetch tasks
       sdk.ButterBar.showMessage({
-        text: "Omnipotent: Error fetching tasks!"
+        html: "Omnipotent: Error fetching tasks! <a href=\"https://127.0.0.1:9201/tasks/_search\" target=\"_blank\">Click here!</a>",
+        persistent: true,
+        time: 30000
       });
     });
   });
@@ -171,7 +189,9 @@ InboxSDK.load('1', 'sdk_omnipotent_e327680648').then(function(sdk){
       function(err) {
         // Failed to connect or fetch tasks
         sdk.ButterBar.showMessage({
-          text: "Omnipotent: Error fetching tasks!"
+          html: "Omnipotent: Error fetching tasks! <a href=\"https://127.0.0.1:9201/tasks/_search\" target=\"_blank\">Click here!</a>",
+          persistent: true,
+          time: 30000
         });
       }
     );
